@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة إدارة الصيدلية والطلبات - صيدلية د. محمد مختار</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background-color: #f8fafc; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes slideIn {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .toast-anim { animation: slideIn 0.3s ease-out forwards; }
+  </style>
+</head>
+<body class="p-4 max-w-4xl mx-auto pb-16">
+
+  <!-- نظام الإشعارات المنبثقة -->
+  <div id="toastContainer" class="fixed top-4 left-4 right-4 z-[100] max-w-sm mx-auto pointer-events-none space-y-2"></div>
+
+  <!-- نافذة تغيير كلمة السر -->
+  <div id="changePasswordModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-3xl p-6 relative shadow-2xl space-y-4">
+      <button onclick="closePasswordModal()" class="absolute top-4 left-4 bg-gray-100 text-gray-600 hover:bg-gray-200 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">✕</button>
+      
+      <div class="text-center">
+        <span class="text-3xl">🔑</span>
+        <h2 class="text-base font-bold text-teal-800 mt-1">تغيير كلمة سر لوحة الإدارة</h2>
+        <p class="text-xs text-gray-500 mt-1">قم بتحديث كلمة السر لحماية لوحة التحكم:</p>
+      </div>
+
+      <div class="space-y-3 pt-2">
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">كلمة السر الحالية:</label>
+          <input type="password" id="currentPassInput" placeholder="أدخل كلمة السر الحالية" class="w-full p-3 border rounded-2xl text-xs bg-slate-50 focus:bg-white focus:outline-teal-600">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">كلمة السر الجديدة:</label>
+          <input type="password" id="newPassInput" placeholder="أدخل كلمة السر الجديدة" class="w-full p-3 border rounded-2xl text-xs bg-slate-50 focus:bg-white focus:outline-teal-600">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">تأكيد كلمة السر الجديدة:</label>
+          <input type="password" id="confirmPassInput" placeholder="أعد كتابة كلمة السر الجديدة" class="w-full p-3 border rounded-2xl text-xs bg-slate-50 focus:bg-white focus:outline-teal-600">
+        </div>
+      </div>
+
+      <button onclick="saveNewPassword()" class="w-full bg-teal-700 text-white text-xs font-bold py-3 rounded-2xl hover:bg-teal-800 transition shadow-md">
+        حفظ كلمة السر الجديدة 💾
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 mb-6 space-y-5">
+    <!-- الهيدر الخاص باللوحة -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b pb-4">
+      <div>
+        <h1 class="text-lg font-bold text-teal-800 flex items-center gap-2">
+          <span>⚙️</span> لوحة إدارة صيدلية د. محمد مختار
+        </h1>
+        <p class="text-xs text-gray-500 mt-0.5">متابعة الطلبات، الإحصائيات، سجل العملاء، وإدارة المخزون السحابي</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="openPasswordModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-300 transition flex items-center gap-1 shadow-sm">
+          🔑 تغيير كلمة السر
+        </button>
+        <span class="bg-teal-100 text-teal-800 text-xs font-extrabold px-3 py-1.5 rounded-full border border-teal-300 shadow-sm">
+          النظام السحابي النشط 🚀
+        </span>
+      </div>
+    </div>
+
+    <!-- أزرار التبويب (Tabs) -->
+    <div class="flex gap-2 border-b pb-3 overflow-x-auto no-scrollbar">
+      <button onclick="switchTab('orders')" id="tabOrdersBtn" class="bg-teal-700 text-white font-bold px-4 py-2 rounded-2xl text-xs transition relative whitespace-nowrap flex items-center gap-1.5 shadow-sm">
+        📋 الطلبات الواردة 
+        <span id="ordersBadge" class="hidden bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full">0</span>
+      </button>
+      <button onclick="switchTab('analytics')" id="tabAnalyticsBtn" class="bg-gray-100 text-gray-700 font-bold px-4 py-2 rounded-2xl text-xs transition whitespace-nowrap flex items-center gap-1.5">
+        📊 التقارير والإحصائيات
+      </button>
+      <button onclick="switchTab('customers')" id="tabCustomersBtn" class="bg-gray-100 text-gray-700 font-bold px-4 py-2 rounded-2xl text-xs transition whitespace-nowrap flex items-center gap-1.5">
+        👥 سجل العملاء
+      </button>
+      <button onclick="switchTab('products')" id="tabProductsBtn" class="bg-gray-100 text-gray-700 font-bold px-4 py-2 rounded-2xl text-xs transition whitespace-nowrap flex items-center gap-1.5">
+        📦 المنتجات والمخزون
+      </button>
+    </div>
+
+    <!-- قسم إدارة الطلبات الواردة -->
+    <div id="ordersSection" class="space-y-3">
+      <h2 class="font-bold text-gray-800 text-xs">قائمة الطلبات الجارية والتحديث اللحظي:</h2>
+      <div id="ordersList" class="space-y-3"></div>
+    </div>
+
+    <!-- قسم التقارير والإحصائيات -->
+    <div id="analyticsSection" class="hidden space-y-4">
+      <h2 class="font-bold text-gray-800 text-xs">📊 ملخص أداء المبيعات والنشاط:</h2>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-teal-50 border border-teal-200 p-4 rounded-3xl shadow-sm">
+          <p class="text-[11px] font-bold text-teal-800">إجمالي المبيعات</p>
+          <h3 id="statTotalRevenue" class="text-base font-extrabold text-teal-900 mt-1">0 ج.م</h3>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 p-4 rounded-3xl shadow-sm">
+          <p class="text-[11px] font-bold text-blue-800">إجمالي الطلبات</p>
+          <h3 id="statTotalOrders" class="text-base font-extrabold text-blue-900 mt-1">0</h3>
+        </div>
+        <div class="bg-purple-50 border border-purple-200 p-4 rounded-3xl shadow-sm">
+          <p class="text-[11px] font-bold text-purple-800">العملاء المسجلون</p>
+          <h3 id="statTotalCustomers" class="text-base font-extrabold text-purple-900 mt-1">0</h3>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 p-4 rounded-3xl shadow-sm">
+          <p class="text-[11px] font-bold text-amber-800">متوسط قيمة الطلب</p>
+          <h3 id="statAvgOrder" class="text-base font-extrabold text-amber-900 mt-1">0 ج.م</h3>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        <div class="bg-slate-50 border p-4 rounded-3xl space-y-2.5">
+          <h3 class="text-xs font-bold text-gray-700 border-b pb-2">📌 توزيع حالات الطلبات:</h3>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between items-center bg-white p-2.5 rounded-2xl border">
+              <span>🟠 قيد التحضير:</span>
+              <strong id="statusPendingCount" class="text-amber-600">0</strong>
+            </div>
+            <div class="flex justify-between items-center bg-white p-2.5 rounded-2xl border">
+              <span>🚚 جاري التوصيل:</span>
+              <strong id="statusShippingCount" class="text-blue-600">0</strong>
+            </div>
+            <div class="flex justify-between items-center bg-white p-2.5 rounded-2xl border">
+              <span>🟢 تم التوصيل:</span>
+              <strong id="statusDeliveredCount" class="text-emerald-600">0</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 border p-4 rounded-3xl space-y-2.5">
+          <h3 class="text-xs font-bold text-gray-700 border-b pb-2">🔥 المنتجات الأكثر طلباً:</h3>
+          <div id="topProductsList" class="space-y-2 text-xs">
+            <p class="text-gray-400 text-center py-4 text-[11px]">جاري حساب الإحصائيات...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- قسم سجل العملاء -->
+    <div id="customersSection" class="hidden space-y-3">
+      <div>
+        <input type="text" id="searchCustomerInput" oninput="renderCustomersList()" placeholder="ابحث باسم العميل أو رقم الهاتف..." class="w-full p-3 border rounded-2xl text-xs bg-slate-50 focus:bg-white focus:outline-teal-600 shadow-sm">
+      </div>
+      <h2 class="font-bold text-gray-800 text-xs">قائمة العملاء المسجلين وسجل المشتريات:</h2>
+      <div id="customersList" class="space-y-3"></div>
+    </div>
+
+    <!-- قسم إدخال وتعديل المنتجات والمخزون المطور -->
+    <div id="productsSection" class="hidden space-y-4">
+      <form id="productForm" onsubmit="handleSaveProduct(event)" class="space-y-4 bg-slate-50 p-5 rounded-3xl border shadow-sm">
+        <input type="hidden" id="prodId">
+        
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2">
+            <label class="block text-xs font-bold text-gray-700 mb-1">اسم المنتج <span class="text-rose-500">*</span></label>
+            <input type="text" id="prodName" placeholder="مثال: شامبو تريتو المغذي" required class="w-full p-3 border rounded-2xl text-xs bg-white focus:outline-teal-600">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-700 mb-1">الشارة المميزة</label>
+            <input type="text" id="prodBadge" placeholder="الأكثر مبيعاً" class="w-full p-3 border rounded-2xl text-xs bg-white focus:outline-teal-600">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-gray-700 mb-1">القسم</label>
+            <select id="prodCategory" class="w-full p-3 border rounded-2xl text-xs bg-white focus:outline-teal-600">
+              <option value="skincare">عناية بالبشرة</option>
+              <option value="haircare">عناية بالشعر</option>
+              <option value="sunscreen">واقيات الشمس</option>
+              <option value="bundles">عروض وباكجات</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-700 mb-1">نوع البشرة المناسب</label>
+            <select id="prodSkin" class="w-full p-3 border rounded-2xl text-xs bg-white focus:outline-teal-600">
+              <option value="all">لكل أنواع البشرة</option>
+              <option value="oily">بشرة دهنية</option>
+              <option value="dry">بشرة جافة</option>
+              <option value="sensitive">بشرة حساسة</option>
+              <option value="combination">بشرة مختلطة</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">رابط صورة المنتج (URL)</label>
+          <input type="text" id="prodImage" placeholder="https://example.com/image.jpg" class="w-full p-3 border rounded-2xl text-xs bg-white focus:outline-teal-600">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-gray-700 mb-1">وصف المنتج تفصيلياً</label>
+          <textarea id="prodDescription" rows="2" placeholder="اكتب وصف المنتج والمكونات والفوائد..." class="w-full p-3 border rounded-2xl text-xs bg-white focus:outline-teal-600"></textarea>
+        </div>
+
+        <hr class="border-gray-200 my-2">
+
+        <!-- منشئ الأحجام والأسعار المطور مع قوالب سريعة -->
+        <div class="bg-white p-4 rounded-3xl border border-teal-200 shadow-sm space-y-3">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b pb-2">
+            <div>
+              <h3 class="text-xs font-bold text-teal-800">🏷️ الأحجام والأسعار والمخزون المتوفر</h3>
+              <p class="text-[10px] text-gray-500">أضف خيارات الأحجام أو الأنواع لهذا المنتج بأسعار ومخزون مستقل</p>
+            </div>
+            <div class="flex gap-1.5">
+              <button type="button" onclick="addStandardVariants()" class="text-[11px] bg-amber-100 text-amber-800 border border-amber-300 font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95">
+                ⚡ أحجام سريعة
+              </button>
+              <button type="button" onclick="addVariantRow()" class="text-xs bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1.5 rounded-xl shadow transition active:scale-95 flex items-center gap-1">
+                + إضافة حجم
+              </button>
+            </div>
+          </div>
+
+          <div id="variantsContainer" class="space-y-2.5"></div>
+        </div>
+
+        <button type="submit" class="w-full bg-teal-700 text-white font-bold py-3.5 rounded-2xl text-xs hover:bg-teal-800 transition shadow-lg">
+          حفظ المنتج والمزامنة مع المتجر 🚀
+        </button>
+      </form>
+
+      <div class="mt-6 space-y-3">
+        <h2 class="font-bold text-gray-800 text-xs">قائمة المنتجات والمخزون الحالي:</h2>
+        <div id="adminList" class="space-y-2.5"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const firebaseConfig = { databaseURL: "https://My-moh-9845a-default-rtdb.firebaseio.com" };
+    let db;
+    try { firebase.initializeApp(firebaseConfig); db = firebase.database(); } catch(e) {}
+
+    let currentAdminPass = localStorage.getItem('mokhtar_admin_pass') || '1234';
+    let products = JSON.parse(localStorage.getItem('mokhtar_cosmetics')) || [];
+    let currentVariants = [];
+    let orders = [];
+    let customers = {};
+    let isFirstLoad = true;
+
+    if(db) {
+      db.ref('admin_settings/password').once('value', (snapshot) => {
+        const cloudPass = snapshot.val();
+        if(cloudPass) {
+          currentAdminPass = cloudPass;
+          localStorage.setItem('mokhtar_admin_pass', cloudPass);
+        }
+        authenticateAdmin();
+      }).catch(() => authenticateAdmin());
+    } else {
+      authenticateAdmin();
+    }
+
+    function authenticateAdmin() {
+      const pass = prompt("برجاء أدخل كلمة سر الإدارة الخاص بالصيدلية:");
+      if(pass !== currentAdminPass) {
+        alert("كلمة السر خاطئة!");
+        document.body.innerHTML = "<h2 class='text-center mt-20 text-red-600 font-bold text-lg'>عفواً، لا تملك صلاحية الوصول للوحة التحكم</h2>";
+      }
+    }
+
+    function openPasswordModal() {
+      document.getElementById('currentPassInput').value = '';
+      document.getElementById('newPassInput').value = '';
+      document.getElementById('confirmPassInput').value = '';
+      document.getElementById('changePasswordModal').classList.remove('hidden');
+    }
+
+    function closePasswordModal() { document.getElementById('changePasswordModal').classList.add('hidden'); }
+
+    function saveNewPassword() {
+      const currentVal = document.getElementById('currentPassInput').value.trim();
+      const newVal = document.getElementById('newPassInput').value.trim();
+      const confirmVal = document.getElementById('confirmPassInput').value.trim();
+
+      if(currentVal !== currentAdminPass) return showToast('كلمة السر الحالية غير صحيحة', 'warning');
+      if(!newVal || newVal.length < 4) return showToast('كلمة السر الجديدة يجب أن تكون 4 أرقام/حروف على الأقل', 'warning');
+      if(newVal !== confirmVal) return showToast('كلمة السر الجديدة وتأكيدها غير متطابقين', 'warning');
+
+      currentAdminPass = newVal;
+      localStorage.setItem('mokhtar_admin_pass', newVal);
+
+      if(db) {
+        db.ref('admin_settings/password').set(newVal, (error) => {
+          if(!error) {
+            showToast('تم حفظ وتحديث كلمة السر سحابياً بنجاح! 🔑', 'success');
+            closePasswordModal();
+          }
+        });
+      } else {
+        showToast('تم حفظ كلمة السر محلياً بنجاح!', 'success');
+        closePasswordModal();
+      }
+    }
+
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const bgColor = type === 'success' ? 'bg-emerald-600' : type === 'warning' ? 'bg-amber-600' : 'bg-teal-800';
+      const icon = type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+
+      toast.className = `${bgColor} text-white text-xs px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-2 pointer-events-auto toast-anim`;
+      toast.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span>${icon}</span>
+          <span class="font-semibold">${message}</span>
+        </div>
+        <button onclick="this.parentElement.remove()" class="text-white/80 hover:text-white font-bold text-sm">✕</button>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => { if(toast.parentElement) toast.remove(); }, 3500);
+    }
+
+    function playNewOrderSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+      } catch(e) {}
+    }
+
+    if(db) {
+      db.ref('cosmetics_products').on('value', (snapshot) => {
+        const val = snapshot.val();
+        if(val) {
+          products = Object.keys(val).map(key => ({ id: key, ...val[key] }));
+          renderAdminList();
+        }
+      });
+
+      db.ref('pharmacy_orders').on('value', (snapshot) => {
+        const val = snapshot.val();
+        if(val) {
+          const newOrders = Object.keys(val).map(key => ({ orderId: key, ...val[key] })).reverse();
+          
+          if(!isFirstLoad && newOrders.length > orders.length) {
+            playNewOrderSound();
+            showToast('🚨 تنبيه: وصل طلب جديد الآن من المتجر!', 'warning');
+          }
+          isFirstLoad = false;
+
+          orders = newOrders;
+          renderOrdersList();
+          renderCustomersList();
+          calculateAnalytics();
+        } else {
+          document.getElementById('ordersList').innerHTML = '<p class="text-center text-gray-400 text-xs py-6">لا توجد طلبات جارية حالياً</p>';
+        }
+      });
+
+      db.ref('pharmacy_customers').on('value', (snapshot) => {
+        const val = snapshot.val();
+        if(val) {
+          customers = val;
+          renderCustomersList();
+          calculateAnalytics();
+        }
+      });
+    }
+
+    function switchTab(tab) {
+      const tabs = ['orders', 'analytics', 'customers', 'products'];
+      tabs.forEach(t => {
+        document.getElementById(t + 'Section').classList.add('hidden');
+        document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1) + 'Btn').className = 'bg-gray-100 text-gray-700 font-bold px-4 py-2 rounded-2xl text-xs transition whitespace-nowrap';
+      });
+
+      document.getElementById(tab + 'Section').classList.remove('hidden');
+      document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Btn').className = 'bg-teal-700 text-white font-bold px-4 py-2 rounded-2xl text-xs transition whitespace-nowrap shadow-sm';
+    }
+
+    function calculateAnalytics() {
+      let totalRevenue = 0;
+      let pendingCount = 0;
+      let shippingCount = 0;
+      let deliveredCount = 0;
+      const productCounts = {};
+
+      orders.forEach(o => {
+        totalRevenue += (o.totalAmount || 0);
+        
+        if(o.status === 'جاري التوصيل 🚚') shippingCount++;
+        else if(o.status === 'تم التوصيل 🟢') deliveredCount++;
+        else pendingCount++;
+
+        (o.items || []).forEach(item => {
+          const name = item.productName || 'منتج غير معروف';
+          productCounts[name] = (productCounts[name] || 0) + (item.quantity || 1);
+        });
+      });
+
+      document.getElementById('statTotalRevenue').innerText = `${totalRevenue.toLocaleString('ar-EG')} ج.م`;
+      document.getElementById('statTotalOrders').innerText = orders.length;
+      document.getElementById('statTotalCustomers').innerText = Object.keys(customers).length;
+      
+      const avg = orders.length > 0 ? Math.round(totalRevenue / orders.length) : 0;
+      document.getElementById('statAvgOrder').innerText = `${avg} ج.م`;
+
+      document.getElementById('statusPendingCount').innerText = pendingCount;
+      document.getElementById('statusShippingCount').innerText = shippingCount;
+      document.getElementById('statusDeliveredCount').innerText = deliveredCount;
+
+      const sortedProds = Object.keys(productCounts)
+        .map(p => ({ name: p, count: productCounts[p] }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+      const topList = document.getElementById('topProductsList');
+      if(sortedProds.length === 0) {
+        topList.innerHTML = '<p class="text-gray-400 text-center py-4 text-[11px]">لا توجد مبيعات مسجلة حتى الآن</p>';
+      } else {
+        topList.innerHTML = sortedProds.map((p, i) => `
+          <div class="flex justify-between items-center bg-white p-2.5 rounded-2xl border">
+            <span class="font-medium text-gray-800">${i + 1}. ${p.name}</span>
+            <span class="bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full text-[10px]">${p.count} قطعة</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    function renderOrdersList() {
+      const list = document.getElementById('ordersList');
+      list.innerHTML = '';
+
+      document.getElementById('ordersBadge').innerText = orders.length;
+      if(orders.length > 0) document.getElementById('ordersBadge').classList.remove('hidden');
+
+      orders.forEach(o => {
+        let itemsHtml = (o.items || []).map(i => `• ${i.productName} [${i.variantName}] (العدد: ${i.quantity}) - ${i.price * i.quantity} ج.م`).join('<br>');
+        list.innerHTML += `
+          <div class="bg-slate-50 border border-teal-200 p-4 rounded-3xl text-xs space-y-2.5 shadow-sm">
+            <div class="flex justify-between items-center border-b pb-2">
+              <span class="font-bold text-teal-800 text-sm">👤 العميل: ${o.customerName} (#${o.orderCode || 'طلب'})</span>
+              <span class="text-gray-400 text-[10px]">${o.createdAt}</span>
+            </div>
+            <p class="text-gray-700">📱 <b>الهاتف:</b> <a href="tel:${o.customerPhone}" class="text-blue-600 underline">${o.customerPhone}</a></p>
+            <p class="text-gray-700">📍 <b>العنوان:</b> ${o.address}</p>
+            
+            <div class="bg-white p-3 rounded-2xl border text-gray-800 text-[11px] leading-relaxed">
+              <b>المنتجات المطلوبة:</b><br>
+              ${itemsHtml}
+            </div>
+
+            <div class="flex justify-between items-center pt-2 gap-2 border-t">
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-xs text-gray-700">الحالة:</span>
+                <select onchange="updateOrderStatus('${o.orderId}', this.value)" class="bg-white border rounded-xl p-1.5 text-xs font-bold text-teal-900 shadow-sm">
+                  <option value="قيد التحضير 🟠" ${o.status === 'قيد التحضير 🟠' ? 'selected' : ''}>قيد التحضير 🟠</option>
+                  <option value="جاري التوصيل 🚚" ${o.status === 'جاري التوصيل 🚚' ? 'selected' : ''}>جاري التوصيل 🚚</option>
+                  <option value="تم التوصيل 🟢" ${o.status === 'تم التوصيل 🟢' ? 'selected' : ''}>تم التوصيل 🟢</option>
+                </select>
+              </div>
+
+              <button onclick="deleteOrder('${o.orderId}')" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl text-[11px] transition">
+                حذف الطلب 🗑️
+              </button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // === الخصم التلقائي للمخزون عند إتمام التوصيل ===
+    function updateOrderStatus(orderId, newStatus) {
+      if(!db) return;
+
+      const orderObj = orders.find(o => o.orderId === orderId);
+      if(!orderObj) return;
+
+      // الخصم يحدث فقط إذا تحولت الحالة إلى "تم التوصيل 🟢" ولم يتم خصمها من قبل
+      if(newStatus === 'تم التوصيل 🟢' && !orderObj.stockDeducted) {
+        deductStockForOrder(orderObj);
+        db.ref('pharmacy_orders/' + orderId + '/stockDeducted').set(true);
+      }
+
+      db.ref('pharmacy_orders/' + orderId + '/status').set(newStatus, (error) => {
+        if(!error) showToast('تم تحديث حالة الطلب بنجاح وتحديث المخزون تلقائياً!');
+      });
+    }
+
+    function deductStockForOrder(orderObj) {
+      if(!orderObj.items) return;
+
+      orderObj.items.forEach(item => {
+        const prod = products.find(p => p.id === item.productId || p.name === item.productName);
+        if(prod && prod.variants) {
+          const variant = prod.variants.find(v => v.id === item.variantId || v.name === item.variantName);
+          if(variant) {
+            variant.stock = Math.max(0, (variant.stock || 0) - (item.quantity || 1));
+            db.ref(`cosmetics_products/${prod.id}/variants`).set(prod.variants);
+          }
+        }
+      });
+    }
+
+    function renderCustomersList() {
+      const list = document.getElementById('customersList');
+      const search = (document.getElementById('searchCustomerInput')?.value || '').toLowerCase();
+      list.innerHTML = '';
+
+      const customerKeys = Object.keys(customers);
+      if(customerKeys.length === 0) {
+        list.innerHTML = '<p class="text-center text-gray-400 text-xs py-6">لا يوجد عملاء مسجلين بعد</p>';
+        return;
+      }
+
+      customerKeys.forEach(key => {
+        const c = customers[key];
+        if(!c.name.toLowerCase().includes(search) && !c.phone.includes(search)) return;
+
+        const custOrders = orders.filter(o => o.customerPhone === c.phone);
+        const totalSpent = custOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+        list.innerHTML += `
+          <div class="bg-white border rounded-3xl p-4 text-xs space-y-2.5 shadow-sm">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-teal-900 text-sm">👤 ${c.name}</span>
+              <span class="bg-teal-50 text-teal-800 font-bold px-2.5 py-1 rounded-xl text-[11px]">${custOrders.length} طلبات | ${totalSpent} ج.م</span>
+            </div>
+            <p class="text-gray-600">📱 <b>الهاتف:</b> <a href="tel:${c.phone}" class="text-blue-600 underline">${c.phone}</a></p>
+            <p class="text-gray-600">📍 <b>العنوان المسجل:</b> ${c.address}</p>
+
+            ${custOrders.length > 0 ? `
+              <details class="mt-2 pt-2 border-t">
+                <summary class="font-bold text-teal-700 cursor-pointer text-[11px]">عرض كافة طلبات العميل (${custOrders.length})</summary>
+                <div class="mt-2 space-y-2 pl-2 border-r-2 border-teal-500 pr-2">
+                  ${custOrders.map(o => `
+                    <div class="bg-slate-50 p-2.5 rounded-2xl border text-[11px]">
+                      <div class="flex justify-between">
+                        <span class="font-bold">#${o.orderCode || 'طلب'} - ${o.createdAt}</span>
+                        <span class="text-teal-700 font-bold">${o.totalAmount} ج.م</span>
+                      </div>
+                      <p class="text-gray-500 text-[10px] mt-0.5">${(o.items || []).map(i => `${i.productName} (${i.quantity})`).join(', ')}</p>
+                    </div>
+                  `).join('')}
+                </div>
+              </details>
+            ` : ''}
+          </div>
+        `;
+      });
+    }
+
+    function deleteOrder(orderId) {
+      if(confirm('هل أنت تأكد من حذف الطلب من القائمة؟')) {
+        if(db) db.ref('pharmacy_orders/' + orderId).remove();
+        showToast('تم حذف الطلب', 'info');
+      }
+    }
+
+    // === أدوات وسرعة إضافة الخيارات والأحجام ===
+    function renderVariants() {
+      const container = document.getElementById('variantsContainer');
+      container.innerHTML = '';
+      if(currentVariants.length === 0) {
+        currentVariants.push({ id: 'v_' + Date.now(), name: 'حجم عادي (250 مل)', price: 225, stock: 10 });
+      }
+
+      currentVariants.forEach((v, index) => {
+        container.innerHTML += `
+          <div class="bg-slate-50 p-3 rounded-2xl border border-gray-200 shadow-sm space-y-1.5 relative">
+            <div class="grid grid-cols-12 gap-2 items-center">
+              <div class="col-span-5">
+                <label class="block text-[10px] font-bold text-gray-500 mb-0.5">اسم الحجم / النوع:</label>
+                <input type="text" placeholder="مثال: 250 مل" value="${v.name}" onchange="updateVariant(${index}, 'name', this.value)" required class="w-full p-2 border rounded-xl text-xs bg-white focus:outline-teal-600">
+              </div>
+              <div class="col-span-3">
+                <label class="block text-[10px] font-bold text-gray-500 mb-0.5">السعر (ج.م):</label>
+                <input type="number" placeholder="225" value="${v.price}" onchange="updateVariant(${index}, 'price', parseFloat(this.value))" required class="w-full p-2 border rounded-xl text-xs bg-white focus:outline-teal-600">
+              </div>
+              <div class="col-span-3">
+                <label class="block text-[10px] font-bold text-gray-500 mb-0.5">المخزون المتوفر:</label>
+                <input type="number" placeholder="10" value="${v.stock}" onchange="updateVariant(${index}, 'stock', parseInt(this.value))" required class="w-full p-2 border rounded-xl text-xs bg-white focus:outline-teal-600">
+              </div>
+              <div class="col-span-1 flex items-end justify-center pt-3">
+                ${currentVariants.length > 1 ? `
+                  <button type="button" onclick="removeVariantRow(${index})" class="text-rose-500 hover:text-rose-700 font-bold p-1 rounded-lg text-sm transition" title="حذف هذا الخيار">
+                    🗑️
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function addVariantRow() { currentVariants.push({ id: 'v_' + Date.now(), name: '', price: '', stock: 10 }); renderVariants(); }
+    
+    // قالب الأحجام الجاهزة لتوفير الوقت
+    function addStandardVariants() {
+      currentVariants = [
+        { id: 'v_1_' + Date.now(), name: 'حجم صغير (100 مل)', price: 150, stock: 10 },
+        { id: 'v_2_' + Date.now(), name: 'حجم وسط (250 مل)', price: 250, stock: 10 },
+        { id: 'v_3_' + Date.now(), name: 'حجم عائلي (500 مل)', price: 400, stock: 10 }
+      ];
+      renderVariants();
+      showToast('تمت إضافة الأحجام المعيارية الجاهزة', 'info');
+    }
+
+    function removeVariantRow(index) { currentVariants.splice(index, 1); renderVariants(); }
+    function updateVariant(index, field, value) { currentVariants[index][field] = value; }
+
+    function handleSaveProduct(e) {
+      e.preventDefault();
+      const id = document.getElementById('prodId').value || Date.now().toString();
+      const newProd = {
+        name: document.getElementById('prodName').value,
+        category: document.getElementById('prodCategory').value,
+        skinType: document.getElementById('prodSkin').value,
+        badge: document.getElementById('prodBadge').value,
+        image: document.getElementById('prodImage').value,
+        description: document.getElementById('prodDescription').value,
+        variants: currentVariants
+      };
+
+      if(db) {
+        db.ref('cosmetics_products/' + id).set(newProd, (error) => {
+          if (!error) {
+            showToast("تم حفظ المنتج والمخزون بنجاح ومزامنته مع المتجر! 🚀", "success");
+            resetForm();
+          }
+        });
+      }
+    }
+
+    function resetForm() {
+      document.getElementById('productForm').reset();
+      document.getElementById('prodId').value = '';
+      currentVariants = [];
+      renderVariants();
+    }
+
+    function renderAdminList() {
+      const list = document.getElementById('adminList');
+      list.innerHTML = '';
+      products.forEach(p => {
+        let totalStock = 0;
+        let isLowStock = false;
+
+        const variantsSummary = (p.variants || []).map(v => {
+          totalStock += (v.stock || 0);
+          if((v.stock || 0) <= 3) isLowStock = true;
+          return `${v.name}: ${v.price}ج (مخزون: ${v.stock})`;
+        }).join(' | ');
+
+        list.innerHTML += `
+          <div class="flex items-center justify-between bg-slate-50 p-3.5 border rounded-2xl text-xs shadow-sm">
+            <div class="max-w-[70%] space-y-0.5">
+              <div class="flex items-center gap-2">
+                <p class="font-bold text-gray-800 text-sm">${p.name}</p>
+                ${isLowStock ? '<span class="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full">⚠️ مخزون منخفض</span>' : ''}
+              </div>
+              <p class="text-teal-700 font-medium text-[11px] truncate">${variantsSummary}</p>
+              <p class="text-gray-400 text-[10px]">إجمالي قطع المخزون: <b>${totalStock} قطعة</b></p>
+            </div>
+            <div class="flex gap-1.5">
+              <button onclick="editProd('${p.id}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl transition">تعديل ✏️</button>
+              <button onclick="deleteProd('${p.id}')" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl transition">حذف 🗑️</button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function editProd(id) {
+      const p = products.find(prod => prod.id === id);
+      if(!p) return;
+      document.getElementById('prodId').value = p.id;
+      document.getElementById('prodName').value = p.name;
+      document.getElementById('prodCategory').value = p.category;
+      document.getElementById('prodSkin').value = p.skinType || 'all';
+      document.getElementById('prodBadge').value = p.badge || '';
+      document.getElementById('prodImage').value = p.image || '';
+      document.getElementById('prodDescription').value = p.description || '';
+      currentVariants = p.variants ? JSON.parse(JSON.stringify(p.variants)) : [];
+      renderVariants();
+      switchTab('products');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function deleteProd(id) {
+      if(confirm('هل أنت تأكد من حذف الصنف فوراً؟')) {
+        if(db) db.ref('cosmetics_products/' + id).remove();
+        showToast('تم حذف المنتج بنجاح', 'info');
+      }
+    }
+
+    renderVariants();
+    renderAdminList();
+  </script>
+</body>
+</html>
